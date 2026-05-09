@@ -25,6 +25,8 @@ mix:
   ambience_gain_db: -18
   sfx_gain_db: -8
   voice_gain_db: -6
+  water_gain_db: -7
+  mechanical_gain_db: -9
   shutter_gain_db: -4
   ducking_db: -6
   ambience_crossfade_ms: 800
@@ -53,4 +55,5 @@ rules:
   voice_reaction_mode: by_length
 
   auto_insert_water_like: false
+  auto_insert_motion_mechanical: true
   water_like_times_sec: []

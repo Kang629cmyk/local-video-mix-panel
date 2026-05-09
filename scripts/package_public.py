@@ -10,6 +10,7 @@ PUBLIC_DIR = DIST / "local-video-mix-panel"
 ZIP_PATH = DIST / "local-video-mix-panel-public.zip"
 
 INCLUDE_FILES = [
+    ".gitattributes",
     ".gitignore",
     "README.md",
     "requirements.txt",

@@ -58,6 +58,7 @@ BASE_FIELDS = {
         {"key": "water_source", "label": "動態音效來源", "type": "select", "options": ["ref", "mechanical", "none"]},
         {"key": "enable_sfx", "label": "啟用額外音效", "type": "checkbox"},
         {"key": "enable_shutter", "label": "啟用閃光音效", "type": "checkbox"},
+        {"key": "enable_motion_mechanical", "label": "快動作自動加機械 / 循環音", "type": "checkbox"},
     ],
     "insert": [
         {"key": "voice_times", "label": "聲音時間點", "type": "textarea", "help": "例如 12.3, 00:45.0"},
@@ -84,6 +85,7 @@ PROFILE_FIELDS = [
     {"key": "select.water_source", "label": "動態音效來源", "type": "select", "options": ["", "ref", "mechanical", "none"]},
     {"key": "select.enable_sfx", "label": "啟用額外音效", "type": "select", "options": ["", "true", "false"]},
     {"key": "select.enable_shutter", "label": "啟用閃光音效", "type": "select", "options": ["", "true", "false"]},
+    {"key": "select.enable_motion_mechanical", "label": "快動作自動加機械 / 循環音", "type": "select", "options": ["", "true", "false"]},
     {"key": "insert.voice_times", "label": "聲音時間點", "type": "textarea"},
     {"key": "insert.voice_ranges", "label": "聲音時間段", "type": "textarea"},
     {"key": "insert.water_times", "label": "動態音效時間點", "type": "textarea"},
@@ -148,6 +150,7 @@ DEFAULTS = {
         "water_source": "ref",
         "enable_sfx": "false",
         "enable_shutter": "true",
+        "enable_motion_mechanical": "true",
     },
     "insert": {
         "voice_times": "",

@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import numpy as np
+import soundfile as sf
 from pydub import AudioSegment
 from pydub.silence import detect_nonsilent
 
@@ -58,6 +60,40 @@ def _export_segment(src: AudioSegment, start_ms: int, end_ms: int, out_wav: Path
     return float(len(clip) / 1000.0)
 
 
+def _audio_features(path: Path) -> dict:
+    samples, sr = sf.read(str(path), always_2d=False)
+    if isinstance(samples, np.ndarray) and samples.ndim > 1:
+        samples = samples.mean(axis=1)
+    samples = np.asarray(samples, dtype=np.float32)
+    if samples.size == 0:
+        return {
+            'rms': 0.0,
+            'peak': 0.0,
+            'centroid_hz': 0.0,
+            'high_ratio': 0.0,
+            'zero_cross': 0.0,
+            'energy_score': 0.0,
+        }
+
+    rms = float(np.sqrt(np.mean(samples ** 2)))
+    peak = float(np.max(np.abs(samples)))
+    spec = np.fft.rfft(samples)
+    mag = np.abs(spec) + 1e-9
+    freqs = np.fft.rfftfreq(len(samples), d=1.0 / float(sr or 48000))
+    centroid = float((freqs * mag).sum() / mag.sum())
+    high_ratio = float(mag[freqs >= 2500].sum() / mag.sum())
+    zero_cross = float(((samples[:-1] * samples[1:]) < 0).mean()) if samples.size > 1 else 0.0
+    energy_score = rms * 2.4 + peak * 0.25 + high_ratio * 1.6 + zero_cross * 1.1 + min(centroid / 6500.0, 1.0)
+    return {
+        'rms': round(rms, 5),
+        'peak': round(peak, 5),
+        'centroid_hz': round(centroid, 1),
+        'high_ratio': round(high_ratio, 4),
+        'zero_cross': round(zero_cross, 4),
+        'energy_score': round(float(energy_score), 4),
+    }
+
+
 def _analyze_simple_audio(audio_path: Path, out_dir: Path, prefix: str, limit: int = 40):
     if not audio_path.exists():
         return []
@@ -73,6 +109,7 @@ def _analyze_simple_audio(audio_path: Path, out_dir: Path, prefix: str, limit: i
             'duration_sec': round(dur, 3),
             'src_start_sec': round(s_ms / 1000.0, 3),
             'src_end_sec': round(e_ms / 1000.0, 3),
+            **_audio_features(out),
         })
     return items
 
@@ -103,6 +140,7 @@ def main() -> None:
                 'src_start_sec': round(float(start), 3),
                 'src_end_sec': round(float(end), 3),
                 'src': str(mechanical_audio),
+                **_audio_features(out),
             })
 
     moan1_audio = resolve_path(cfg, files.get('moan1_audio', '')) if files.get('moan1_audio') else None

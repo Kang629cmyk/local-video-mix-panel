@@ -3,7 +3,7 @@ from __future__ import annotations
 from itertools import cycle
 from pathlib import Path
 
-from common import load_config, parse_time_list, parse_time_ranges, read_json, resolve_path, work_path, write_json
+from common import clamp, load_config, parse_time_list, parse_time_ranges, read_json, resolve_path, work_path, write_json
 
 
 def build_ambience_track(duration_sec: float, ambience_segments, gain_db: float):
@@ -194,7 +194,82 @@ def build_water_from_pool(voice_reactions, approved_files, manual_times):
     return clips
 
 
-def build_water_like_clips(water_like, duration_sec: float, auto_insert: bool, manual_times, manual_ranges=None):
+def _event_overlap(left, right, pad_sec: float = 0.0) -> bool:
+    left_start = float(left.get('start_sec', left.get('peak_time_sec', 0.0))) - pad_sec
+    left_end = float(left.get('end_sec', left.get('peak_time_sec', left_start))) + pad_sec
+    right_start = float(right.get('start_sec', right.get('peak_time_sec', 0.0))) - pad_sec
+    right_end = float(right.get('end_sec', right.get('peak_time_sec', right_start))) + pad_sec
+    return left_start <= right_end and right_start <= left_end
+
+
+def _event_pulse_rate(event) -> float:
+    if event.get('pulse_rate_hz') is not None:
+        return float(event.get('pulse_rate_hz') or 0.0)
+    duration = max(float(event.get('duration_sec', 0.0) or 0.0), 0.18)
+    return float(event.get('sample_count', 1) or 1) / duration
+
+
+def _event_amplitude(event, key: str, fallback: float = 1.0) -> float:
+    if event.get('motion_amplitude') is not None:
+        return float(event.get('motion_amplitude') or fallback)
+    peak = float(event.get(key, 0.0) or 0.0)
+    threshold = float(event.get('threshold', 0.0) or 0.0)
+    if threshold > 0:
+        return clamp(peak / threshold, 0.4, 3.0)
+    return fallback
+
+
+def _segment_energy(item) -> float:
+    return float(item.get('energy_score', item.get('water_score', item.get('rms', 0.0))) or 0.0)
+
+
+def _pick_segment_for_event(items, event, idx: int, mode: str):
+    if not items:
+        return None
+    if not any(('centroid_hz' in item or 'energy_score' in item or 'water_score' in item) for item in items):
+        return items[idx % len(items)]
+
+    pulse_rate = clamp(_event_pulse_rate(event), 0.0, 12.0)
+    amplitude = _event_amplitude(event, 'peak_motion' if mode == 'motion' else 'peak_score')
+    target_centroid = 900.0 + pulse_rate * 420.0 + min(amplitude, 2.5) * 420.0
+    target_energy = 0.6 + min(amplitude, 2.4) * 0.55
+
+    def score(item):
+        centroid = float(item.get('centroid_hz', target_centroid) or target_centroid)
+        energy = _segment_energy(item)
+        duration = float(item.get('duration_sec', 0.0) or 0.0)
+        duration_target = max(0.25, float(event.get('duration_sec', 0.35) or 0.35))
+        return (
+            abs((centroid - target_centroid) / 6500.0)
+            + abs((energy - target_energy) / 2.4)
+            + abs((duration - duration_target) / 8.0)
+        )
+
+    ranked = sorted(items, key=score)
+    return ranked[idx % min(3, len(ranked))]
+
+
+def _auto_event_clip(item, event, duration_sec: float, gain_db: float, clip_type: str, idx: int):
+    item_dur = float(item.get('duration_sec', 0.0) or 0.0)
+    event_dur = float(event.get('duration_sec', 0.0) or 0.0)
+    dur = min(item_dur, max(0.22, event_dur + 0.12)) if item_dur > 0 else max(0.22, event_dur)
+    start = min(max(0.0, float(event.get('start_sec', event.get('peak_time_sec', 0.0)) or 0.0)), max(0.0, duration_sec - dur))
+    amp = _event_amplitude(event, 'peak_motion' if 'motion' in clip_type else 'peak_score')
+    gain = gain_db + clamp((amp - 1.0) * 1.8, -2.5, 3.5)
+    return {
+        'src': item['path'],
+        'start_sec': start,
+        'offset_sec': 0.0,
+        'duration_sec': dur,
+        'gain_db': round(float(gain), 2),
+        'type': clip_type,
+        'score': event.get('peak_motion', event.get('peak_score', 0)),
+        'pulse_rate_hz': event.get('pulse_rate_hz'),
+        'match_index': idx,
+    }
+
+
+def build_water_like_clips(water_like, duration_sec: float, auto_insert: bool, manual_times, manual_ranges=None, auto_events=None, gain_db: float = -7.0):
     clips = []
     if not water_like:
         return clips
@@ -211,7 +286,7 @@ def build_water_like_clips(water_like, duration_sec: float, auto_insert: bool, m
                 'start_sec': min(max(0.0, float(start)), max(0.0, duration_sec - dur)),
                 'offset_sec': 0.0,
                 'duration_sec': dur,
-                'gain_db': -7,
+                'gain_db': gain_db,
                 'type': 'water_like_range',
                 'score': item.get('water_score', 0),
             })
@@ -225,10 +300,21 @@ def build_water_like_clips(water_like, duration_sec: float, auto_insert: bool, m
                 'start_sec': min(max(0.0, float(t)), max(0.0, duration_sec - item['duration_sec'])),
                 'offset_sec': 0.0,
                 'duration_sec': item['duration_sec'],
-                'gain_db': -7,
+                'gain_db': gain_db,
                 'type': 'water_like_manual',
                 'score': item.get('water_score', 0),
             })
+        return clips
+
+    if auto_events:
+        filtered = []
+        for event in sorted(auto_events, key=lambda e: float(e.get('peak_time_sec', e.get('start_sec', 0.0)))):
+            if not filtered or float(event.get('peak_time_sec', event.get('start_sec', 0.0))) - float(filtered[-1].get('peak_time_sec', filtered[-1].get('start_sec', 0.0))) >= 0.65:
+                filtered.append(event)
+        for idx, event in enumerate(filtered[:12]):
+            item = _pick_segment_for_event(water_like, event, idx, 'water')
+            if item:
+                clips.append(_auto_event_clip(item, event, duration_sec, gain_db, 'water_like_auto_event', idx))
         return clips
 
     if auto_insert:
@@ -240,10 +326,22 @@ def build_water_like_clips(water_like, duration_sec: float, auto_insert: bool, m
                 'start_sec': min(duration_sec - item['duration_sec'], step * idx),
                 'offset_sec': 0.0,
                 'duration_sec': item['duration_sec'],
-                'gain_db': -7,
+                'gain_db': gain_db,
                 'type': 'water_like',
                 'score': item.get('water_score', 0),
             })
+    return clips
+
+
+def build_motion_mechanical_clips(mechanical_segments, motion_events, duration_sec: float, gain_db: float):
+    clips = []
+    if not mechanical_segments or not motion_events:
+        return clips
+
+    for idx, event in enumerate(sorted(motion_events, key=lambda e: float(e.get('peak_time_sec', e.get('start_sec', 0.0))))[:14]):
+        item = _pick_segment_for_event(mechanical_segments, event, idx, 'motion')
+        if item:
+            clips.append(_auto_event_clip(item, event, duration_sec, gain_db, 'mechanical_motion_auto', idx))
     return clips
 
 
@@ -300,6 +398,7 @@ def main() -> None:
     water_source = str(select.get('water_source', 'ref'))
     enable_sfx = bool(select.get('enable_sfx', False))
     enable_shutter = bool(select.get('enable_shutter', True))
+    enable_motion_mechanical = bool(select.get('enable_motion_mechanical', rules.get('auto_insert_motion_mechanical', True)))
 
     ambience_segments = ref_data.get('ambience_segments', []) if ambience_source == 'ref' else []
     ambience = build_ambience_track(duration_sec, ambience_segments, cfg['mix']['ambience_gain_db'])
@@ -340,16 +439,10 @@ def main() -> None:
 
     water_times = parse_time_list(insert.get('water_times') or rules.get('water_like_times_sec') or rules.get('water_sfx_times_sec'))
     water_ranges = parse_time_ranges(insert.get('water_ranges'))
-    auto_water_times = []
+    auto_water_events = []
     if (not water_times) and (not water_ranges):
         events = main_data.get('water_events', []) or []
-        # use peak times, de-duplicate, limit
-        times = sorted({round(float(e.get('peak_time_sec', e.get('start_sec', 0.0))), 3) for e in events})
-        filtered = []
-        for t in times:
-            if not filtered or abs(t - filtered[-1]) >= 0.65:
-                filtered.append(t)
-        auto_water_times = filtered[:12]
+        auto_water_events = sorted(events, key=lambda e: float(e.get('peak_time_sec', e.get('start_sec', 0.0))))[:12]
 
     water_pool = []
     if water_source == 'ref':
@@ -357,16 +450,32 @@ def main() -> None:
             ref_data.get('water_like', []),
             duration_sec,
             bool(rules.get('auto_insert_water_like', False)) and not water_times and not water_ranges,
-            water_times or auto_water_times,
+            water_times,
             water_ranges,
+            auto_water_events,
+            cfg['mix'].get('water_gain_db', -7),
         )
     elif water_source == 'mechanical':
         water_pool = build_water_like_clips(
             assets_data.get('mechanical_water', []),
             duration_sec,
             False,
-            water_times or auto_water_times,
+            water_times,
             water_ranges,
+            auto_water_events,
+            cfg['mix'].get('water_gain_db', -7),
+        )
+
+    water_events = main_data.get('water_events', []) or []
+    motion_events = main_data.get('motion_events', []) or []
+    motion_events = [event for event in motion_events if not any(_event_overlap(event, water, 0.35) for water in water_events)]
+    motion_mechanical = []
+    if enable_motion_mechanical:
+        motion_mechanical = build_motion_mechanical_clips(
+            assets_data.get('mechanical_water', []),
+            motion_events,
+            duration_sec,
+            cfg['mix'].get('mechanical_gain_db', cfg['mix'].get('sfx_gain_db', -8) - 1),
         )
 
     sfx_segments = assets_data.get('sfx_segments', []) if enable_sfx else []
@@ -386,7 +495,7 @@ def main() -> None:
         auto_sfx_times,
     )
 
-    sfx = sorted(shutter + water_pool + extra_sfx, key=lambda x: x['start_sec'])
+    sfx = sorted(shutter + water_pool + motion_mechanical + extra_sfx, key=lambda x: x['start_sec'])
 
     timeline = {
         'duration_sec': duration_sec,

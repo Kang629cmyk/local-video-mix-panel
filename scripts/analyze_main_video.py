@@ -298,6 +298,101 @@ def detect_water_events(visual_points, min_len_sec: float = 0.25, gap_sec: float
     return out
 
 
+def detect_motion_events(visual_points, min_len_sec: float = 0.18, gap_sec: float = 0.32):
+    if not visual_points:
+        return []
+
+    motions = np.array([float(p.get('motion', 0.0)) for p in visual_points], dtype=np.float32)
+    if float(np.max(motions)) <= 0.0:
+        return []
+
+    thresh = float(max(8.0, np.percentile(motions, 92)))
+    events = []
+    cur = None
+
+    for p in visual_points:
+        t = float(p['time_sec'])
+        motion = float(p.get('motion', 0.0))
+        white_ratio = float(p.get('white_ratio', 0.0))
+        water_score = float(p.get('water_score', 0.0))
+        is_candidate = motion >= thresh and white_ratio <= 0.55
+
+        if is_candidate:
+            sample = {
+                'time_sec': t,
+                'motion': motion,
+                'edge_density': float(p.get('edge_density', 0.0)),
+                'water_score': water_score,
+            }
+            if cur is None:
+                cur = {
+                    'start_sec': t,
+                    'end_sec': t,
+                    'peak_time_sec': t,
+                    'peak_motion': motion,
+                    'samples': [sample],
+                }
+            elif t - cur['end_sec'] <= gap_sec:
+                cur['end_sec'] = t
+                cur['samples'].append(sample)
+                if motion > cur['peak_motion']:
+                    cur['peak_motion'] = motion
+                    cur['peak_time_sec'] = t
+            else:
+                events.append(cur)
+                cur = {
+                    'start_sec': t,
+                    'end_sec': t,
+                    'peak_time_sec': t,
+                    'peak_motion': motion,
+                    'samples': [sample],
+                }
+        elif cur is not None:
+            events.append(cur)
+            cur = None
+
+    if cur is not None:
+        events.append(cur)
+
+    out = []
+    for idx, e in enumerate(events):
+        duration = float(e['end_sec'] - e['start_sec'])
+        if duration < min_len_sec:
+            continue
+
+        samples = e['samples']
+        sample_count = len(samples)
+        pulse_count = 1
+        for i in range(1, max(1, sample_count - 1)):
+            prev_m = samples[i - 1]['motion']
+            cur_m = samples[i]['motion']
+            next_m = samples[i + 1]['motion']
+            if cur_m >= prev_m and cur_m >= next_m and cur_m >= thresh:
+                pulse_count += 1
+        pulse_rate_hz = pulse_count / max(duration, 0.18)
+        avg_motion = sum(s['motion'] for s in samples) / sample_count
+        avg_edge = sum(s['edge_density'] for s in samples) / sample_count
+        avg_water = sum(s['water_score'] for s in samples) / sample_count
+        motion_amplitude = min(float(e['peak_motion']) / max(thresh, 1.0), 3.0)
+
+        out.append({
+            'id': idx,
+            'start_sec': round(float(e['start_sec']), 3),
+            'end_sec': round(float(e['end_sec']), 3),
+            'duration_sec': round(duration, 3),
+            'peak_time_sec': round(float(e['peak_time_sec']), 3),
+            'peak_motion': round(float(e['peak_motion']), 3),
+            'avg_motion': round(float(avg_motion), 3),
+            'avg_edge_density': round(float(avg_edge), 5),
+            'avg_water_score': round(float(avg_water), 5),
+            'pulse_count': int(pulse_count),
+            'pulse_rate_hz': round(float(pulse_rate_hz), 3),
+            'motion_amplitude': round(float(motion_amplitude), 3),
+            'threshold': round(thresh, 3),
+        })
+    return out
+
+
 def transcribe_main(audio_path: Path):
     model = whisper.load_model('base')
     result = model.transcribe(str(audio_path), fp16=False)
@@ -323,6 +418,7 @@ def main() -> None:
     visual_points = analyze_visual_energy(main_video)
     shutter_candidates, flash_events, flash_holds = detect_shutter_candidates(visual_points, cfg['analysis']['max_shutter_candidates'])
     water_events = detect_water_events(visual_points)
+    motion_events = detect_motion_events(visual_points)
     dialogue_segments = transcribe_main(main_audio) if main_audio.exists() else []
 
     data = {
@@ -333,6 +429,7 @@ def main() -> None:
         'flash_holds': flash_holds,
         'shutter_candidates': shutter_candidates,
         'water_events': water_events,
+        'motion_events': motion_events,
         'dialogue_segments': dialogue_segments,
     }
     write_json(analysis_dir / 'main_analysis.json', data)
