@@ -1,0 +1,56 @@
+project:
+  input_dir: input
+  work_dir: work
+  output_dir: output
+
+files:
+  main_video: input/main.mp4
+  ref_video: input/ref.mp4
+  shutter_sfx: input/shutter.m4a
+  final_video: output/final.mp4
+
+analysis:
+  frame_sample_fps: 2
+  scene_threshold: 30.0
+  min_scene_len_sec: 1.0
+  speech_min_sec: 0.25
+  ambience_min_sec: 2.0
+  voice_reaction_max_sec: 2.5
+  effect_max_sec: 1.5
+  max_shutter_candidates: 12
+
+mix:
+  sample_rate: 48000
+  channels: 2
+  ambience_gain_db: -18
+  sfx_gain_db: -8
+  voice_gain_db: -6
+  shutter_gain_db: -4
+  ducking_db: -6
+  ambience_crossfade_ms: 800
+  limiter_headroom_db: -1
+
+rules:
+  auto_insert_shutter: true
+  shutter_mode: mixed
+  shutter_times_sec: []
+  prefer_main_dialogue: true
+  allow_ref_voice_reactions: true
+  allow_ref_ambience: true
+  allow_ref_sfx: true
+  fallback_generate_silence_ambience: true
+
+  approved_water_sfx:
+    - voice_reaction_001.wav
+    - voice_reaction_002.wav
+    - voice_reaction_003.wav
+  water_sfx_times_sec: []
+
+  approved_voice_reactions:
+    - voice_reaction_004.wav
+    - voice_reaction_005.wav
+  insert_voice_reaction_times_sec: []
+  voice_reaction_mode: by_length
+
+  auto_insert_water_like: false
+  water_like_times_sec: []

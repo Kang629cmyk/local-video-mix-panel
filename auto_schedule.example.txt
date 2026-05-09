@@ -1,0 +1,7 @@
+# zh-TW: 只需要改輸出後綴和影片檔名；每行一個影片，可省略 .mp4。
+# en-US: Edit only the output suffix and video names; one video per line, .mp4 is optional.
+
+輸出後綴=_final
+
+sample-main
+sample-second-video.mp4

@@ -1,0 +1,33 @@
+# Local configuration
+config.ini
+auto_schedule.txt
+panel_launcher.log
+
+# User media and generated output
+input/
+output/
+work/
+build/
+dist/
+*.mp4
+*.mov
+*.mkv
+*.avi
+*.mp3
+*.wav
+*.m4a
+*.aac
+*.flac
+
+# Packaged binaries and caches
+*.exe
+__pycache__/
+*.py[cod]
+
+# Local environment
+.venv/
+venv/
+env/
+.env
+.DS_Store
+Thumbs.db

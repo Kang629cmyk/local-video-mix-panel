@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Local Video Mix Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;700;800&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='panel.css', v=asset_version) }}">
+</head>
+<body>
+  <div class="app-shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">LOCAL CONTROL PANEL</p>
+        <h1>Local Video Mix Panel</h1>
+        <p class="hero-copy">管理 `config.ini`、執行 pipeline、查看動態事件與閃光偵測結果。</p>
+      </div>
+      <div class="hero-meta">
+        <span class="meta-chip">設定檔：{{ config_path }}</span>
+        <span class="meta-chip" id="runStateChip">等待中</span>
+      </div>
+    </header>
+
+    <section class="toolbar">
+      <button class="primary" id="saveButton" type="button">儲存設定</button>
+      <button id="runCurrentButton" type="button">執行目前設定</button>
+      <div class="toolbar-group">
+        <select id="runProfileSelect"></select>
+        <button id="runProfileButton" type="button">執行單一 Profile</button>
+      </div>
+      <button id="runScheduleButton" type="button">執行排程 Profiles</button>
+      <div class="toolbar-group">
+        <select id="analysisTargetSelect"></select>
+        <button id="refreshAnalysisButton" type="button">更新分析</button>
+      </div>
+    </section>
+
+    <div class="notice" id="noticeBar">準備讀取設定中…</div>
+
+    <main class="layout">
+      <section class="card" id="baseSectionsCard">
+        <div class="card-head">
+          <h2>設定</h2>
+          <p>從這裡改 `config.ini` 的主要欄位；時間欄位可直接用視覺化方式增刪與微調。</p>
+        </div>
+        <div class="section-stack" id="baseSections"></div>
+      </section>
+
+      <section class="card">
+        <div class="card-head">
+          <h2>偵測摘要</h2>
+          <p>可以先看自動判斷，再決定要不要手動填時間。</p>
+        </div>
+        <div class="summary-grid">
+          <div class="summary-box">
+            <span class="summary-label">Motion/SFX Events</span>
+            <strong id="waterCount">0</strong>
+          </div>
+          <div class="summary-box">
+            <span class="summary-label">Flash Holds</span>
+            <strong id="flashHoldCount">0</strong>
+          </div>
+          <div class="summary-box">
+            <span class="summary-label">Shutter Candidates</span>
+            <strong id="shutterCount">0</strong>
+          </div>
+          <div class="summary-box">
+            <span class="summary-label">Mechanical Segments</span>
+            <strong id="mechanicalWaterCount">0</strong>
+          </div>
+        </div>
+
+        <div class="preview-panel">
+          <div class="preview-card">
+            <div class="preview-head">
+              <h3>縮圖預覽</h3>
+              <p id="framePreviewMeta">選擇 motion / flash / shutter 項目後可查看主影片畫面。</p>
+            </div>
+            <div class="preview-canvas image" id="framePreviewBox">
+              <div class="preview-empty" id="framePreviewEmpty">尚未選擇縮圖預覽。</div>
+              <img class="preview-media hidden" id="framePreviewImage" alt="frame preview">
+            </div>
+          </div>
+          <div class="preview-card">
+            <div class="preview-head">
+              <h3>波形預覽</h3>
+              <p id="wavePreviewMeta">選擇 mechanical segment 項目後可查看音訊波形。</p>
+            </div>
+            <div class="preview-canvas waveform" id="wavePreviewBox">
+              <div class="preview-empty" id="wavePreviewEmpty">尚未選擇波形預覽。</div>
+              <img class="preview-media hidden" id="wavePreviewImage" alt="waveform preview">
+            </div>
+          </div>
+        </div>
+
+        <div class="data-group">
+          <h3>Motion/SFX Events</h3>
+          <div class="table-like" id="waterEventsTable"></div>
+        </div>
+
+        <div class="data-group">
+          <h3>Flash Holds</h3>
+          <div class="table-like" id="flashHoldsTable"></div>
+        </div>
+
+        <div class="data-group">
+          <h3>Shutter Candidates</h3>
+          <div class="table-like" id="shutterCandidatesTable"></div>
+        </div>
+
+        <div class="data-group">
+          <h3>Mechanical Segments</h3>
+          <div class="table-like" id="mechanicalWaterTable"></div>
+        </div>
+
+        <div class="data-group">
+          <h3>Timeline Track Counts</h3>
+          <div class="table-like compact" id="trackCountsTable"></div>
+        </div>
+      </section>
+
+      <section class="card span-2">
+        <div class="card-head">
+          <h2>Profiles</h2>
+          <p>`main1 / main2 / main3` 這類輸出版本在這裡管理。</p>
+        </div>
+        <div class="profile-toolbar">
+          <button id="addProfileButton" type="button">新增 Profile</button>
+          <button id="seedProfilesButton" type="button">快速建立 main1/main2/main3</button>
+        </div>
+        <div class="profiles-grid" id="profilesContainer"></div>
+      </section>
+
+      <section class="card span-2">
+        <div class="card-head">
+          <h2>片段擷取</h2>
+          <p>輸入開始與結束時間後，可直接輸出影片段或音訊段。</p>
+        </div>
+        <div class="clip-grid">
+          <div class="field">
+            <label for="clipSourcePreset">來源預設</label>
+            <select id="clipSourcePreset">
+              <option value="main_video">主影片</option>
+              <option value="ref_video">Ref 影片</option>
+              <option value="final_video">輸出影片</option>
+              <option value="moan1_audio">聲音素材 1</option>
+              <option value="moan2_audio">聲音素材 2</option>
+              <option value="sfx_audio">音效來源</option>
+              <option value="mechanical_audio">機械 / 循環音來源</option>
+              <option value="shutter_sfx">閃光音效</option>
+              <option value="custom">自訂路徑</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="clipProfileSelect">套用 Profile</label>
+            <select id="clipProfileSelect"></select>
+          </div>
+          <div class="field full">
+            <label for="clipSourcePath">來源路徑</label>
+            <div class="field-control">
+              <input id="clipSourcePath" type="text">
+              <button class="browse-trigger browse-button" type="button" data-target="clipSourcePath" data-mode="file">瀏覽</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="clipOutputKind">輸出種類</label>
+            <select id="clipOutputKind">
+              <option value="video">影片</option>
+              <option value="audio">音訊</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="clipOutputDir">輸出資料夾</label>
+            <div class="field-control">
+              <input id="clipOutputDir" type="text" value="output/clips">
+              <button class="browse-trigger browse-button" type="button" data-target="clipOutputDir" data-mode="dir">瀏覽</button>
+            </div>
+          </div>
+          <div class="field">
+            <label for="clipOutputName">輸出檔名</label>
+            <input id="clipOutputName" type="text" placeholder="例如 sfx_hit_01">
+          </div>
+          <div class="field">
+            <label for="clipStartTime">開始時間</label>
+            <input id="clipStartTime" type="text" placeholder="00:12.500">
+          </div>
+          <div class="field">
+            <label for="clipEndTime">結束時間</label>
+            <input id="clipEndTime" type="text" placeholder="00:15.000">
+          </div>
+        </div>
+        <div class="profile-toolbar">
+          <button class="primary" id="exportClipButton" type="button">輸出片段</button>
+          <button id="refreshClipListButton" type="button">更新清單</button>
+          <button id="openClipFolderButton" type="button">開啟輸出資料夾</button>
+        </div>
+        <div class="table-like compact" id="clipExportResult"></div>
+        <div class="data-group">
+          <h3>已擷取片段</h3>
+          <div class="table-like" id="clipExportList"></div>
+        </div>
+      </section>
+
+      <section class="card span-2">
+        <div class="card-head">
+          <h2>執行 Log</h2>
+          <p>按執行後會即時更新，不用切回終端機看。</p>
+        </div>
+        <pre class="log-view" id="logView"></pre>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop hidden" id="browserModal">
+    <div class="modal-panel">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">FILE BROWSER</p>
+          <h2 id="browserTitle">選擇檔案</h2>
+          <p class="modal-path" id="browserPath"></p>
+        </div>
+        <button id="closeBrowserButton" type="button">關閉</button>
+      </div>
+      <div class="modal-toolbar">
+        <button id="browserParentButton" type="button">上一層</button>
+        <button id="browserChooseCurrentButton" type="button">選用目前資料夾</button>
+        <div class="shortcut-strip" id="browserShortcuts"></div>
+      </div>
+      <div class="browser-list" id="browserEntries"></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="timelineModal">
+    <div class="modal-panel timeline-modal-panel">
+      <div class="modal-head">
+        <div>
+          <p class="eyebrow">TIMELINE EDITOR</p>
+          <h2 id="timelineTitle">時間軸調整</h2>
+          <p class="modal-path" id="timelineMeta">載入時間軸中…</p>
+        </div>
+        <button id="closeTimelineButton" type="button">關閉</button>
+      </div>
+      <div class="timeline-summary">
+        <span class="meta-chip" id="timelineSourceChip">來源：-</span>
+        <span class="meta-chip" id="timelineDurationChip">長度：-</span>
+      </div>
+      <div class="timeline-preview-stack">
+        <div class="preview-card timeline-preview-card">
+          <div class="preview-head">
+            <h3 id="timelinePreviewTitle">目前位置預覽</h3>
+          <p id="timelinePreviewMeta">拖拉時間軸後會更新目前位置；播放時也會跟著刷新縮圖。</p>
+          </div>
+          <div class="preview-canvas image" id="timelinePreviewBox">
+            <div class="preview-empty" id="timelinePreviewEmpty">尚未載入預覽。</div>
+            <img class="preview-media hidden" id="timelinePreviewImage" alt="timeline preview">
+          </div>
+        </div>
+        <div class="preview-card timeline-player-card">
+          <div class="preview-head">
+            <h3>播放預覽</h3>
+            <p id="timelinePlayerMeta">可直接播放目前素材，方便邊看邊調整時間；支援空白鍵播放 / 暫停、左右鍵微調、逗號句點細調。</p>
+          </div>
+          <div class="timeline-player-shell">
+            <video class="timeline-media hidden" id="timelineVideoPlayer" preload="metadata" playsinline></video>
+            <audio class="timeline-media hidden" id="timelineAudioPlayer" preload="metadata" controls></audio>
+            <div class="preview-empty" id="timelinePlayerEmpty">目前沒有可播放的媒體。</div>
+          </div>
+          <div class="timeline-player-controls">
+            <button class="primary" id="timelinePlayPauseButton" type="button">播放</button>
+            <button id="timelinePlaySelectionButton" type="button">從起點播放</button>
+            <button id="timelineSeekStartButton" type="button">跳到起點</button>
+            <span class="timeline-playback-text" id="timelinePlaybackText">00:00 / 00:00</span>
+          </div>
+        </div>
+        <div class="timeline-filmstrip" id="timelineFilmstrip"></div>
+      </div>
+      <div class="timeline-readout">
+        <div class="field">
+          <label for="timelineStartInput">起點</label>
+          <input id="timelineStartInput" type="text" placeholder="00:12.500">
+        </div>
+        <div class="field" id="timelineEndField">
+          <label for="timelineEndInput">終點</label>
+          <input id="timelineEndInput" type="text" placeholder="00:15.000">
+        </div>
+      </div>
+      <div class="timeline-track-shell">
+        <div class="timeline-track" id="timelineTrack">
+          <div class="timeline-entry-overlay" id="timelineEntryOverlay"></div>
+          <div class="timeline-selection" id="timelineSelection"></div>
+          <div class="timeline-playhead" id="timelinePlayhead"></div>
+          <button class="timeline-handle start" id="timelineStartHandle" type="button" aria-label="timeline start handle"></button>
+          <button class="timeline-handle end" id="timelineEndHandle" type="button" aria-label="timeline end handle"></button>
+        </div>
+        <div class="timeline-axis">
+          <span id="timelineAxisStart">00:00</span>
+          <span id="timelineAxisMid">00:00</span>
+          <span id="timelineAxisEnd">00:00</span>
+        </div>
+      </div>
+      <div class="timeline-actions">
+        <button class="primary" id="timelineApplyButton" type="button">套用到欄位</button>
+        <button id="timelineLoadSelectedButton" type="button">載入目前選取</button>
+        <button id="timelinePreviewButton" type="button">預覽目前位置</button>
+      </div>
+      <p class="field-help" id="timelineHint">可直接拖拉把手調整；點時間軸會移動最近的把手，拖曳中間色塊可整段平移，空白鍵可播放 / 暫停，左右鍵微調，Shift + 左右鍵大步移動，Home / End 跳到起終點，, / . 做更細微調。</p>
+    </div>
+  </div>
+
+  <script>
+    window.PANEL_META = {{ panel_meta|tojson }};
+  </script>
+  <script src="{{ url_for('static', filename='panel.js', v=asset_version) }}"></script>
+</body>
+</html>

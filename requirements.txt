@@ -1,0 +1,18 @@
+ffmpeg-python
+Flask>=3.0,<4.0
+moviepy==1.0.3
+pydub
+librosa
+soundfile
+opencv-python
+scenedetect[opencv]
+numpy
+pandas
+PyYAML
+tqdm
+openai-whisper
+
+# Optional but recommended
+demucs
+torch
+torchaudio
