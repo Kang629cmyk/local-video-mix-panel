@@ -140,7 +140,7 @@ def main() -> None:
         open_browser()
     except Exception as exc:
         log(f"開啟失敗：{exc!r}")
-        show_message("開啟使用者面板失敗", str(exc), 0x10)
+        show_message("Open Panel Failed", str(exc), 0x10)
 
 
 if __name__ == "__main__":

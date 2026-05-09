@@ -104,7 +104,7 @@ Windows 也可以雙擊：
 On Windows, you can also double-click:
 
 ```text
-開啟使用者面板.bat
+open-panel.bat
 ```
 
 ## CLI Usage / 命令列使用
@@ -167,7 +167,7 @@ Windows 可雙擊：
 On Windows, double-click:
 
 ```text
-自動排程輸出.bat
+run-auto-schedule.bat
 ```
 
 ## Public Packaging / 公開版打包

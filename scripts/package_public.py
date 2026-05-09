@@ -16,9 +16,9 @@ INCLUDE_FILES = [
     "config.yaml",
     "config.example.ini",
     "auto_schedule.example.txt",
-    "自動排程輸出.bat",
-    "開啟使用者面板.bat",
-    "開啟使用者面板.pyw",
+    "run-auto-schedule.bat",
+    "open-panel.bat",
+    "open-panel.pyw",
 ]
 
 INCLUDE_DIRS = [
