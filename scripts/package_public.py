@@ -36,6 +36,17 @@ EXCLUDE_SUFFIXES = {
 }
 
 
+def clear_public_dir(path: Path) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    for child in path.iterdir():
+        if child.name == ".git":
+            continue
+        if child.is_dir():
+            shutil.rmtree(child)
+        else:
+            child.unlink()
+
+
 def ensure_inside_workspace(path: Path) -> Path:
     resolved = path.resolve()
     root = ROOT.resolve()
@@ -63,12 +74,12 @@ def main() -> None:
     dist_dir = ensure_inside_workspace(DIST)
 
     if public_dir.exists():
-        shutil.rmtree(public_dir)
+        clear_public_dir(public_dir)
     if zip_path.exists():
         zip_path.unlink()
 
     dist_dir.mkdir(parents=True, exist_ok=True)
-    public_dir.mkdir(parents=True)
+    public_dir.mkdir(parents=True, exist_ok=True)
 
     for rel in INCLUDE_FILES:
         src = ROOT / rel

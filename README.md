@@ -4,6 +4,20 @@
 
 This project is a local video audio-mixing tool with a CLI pipeline and a Web control panel. It analyzes a main video, slices reference audio, builds a timeline, and renders a final video with mixed audio layers.
 
+## 日本語説明 / Japanese Overview
+
+このプロジェクトは、ローカル環境で動画に効果音や参照音声を合成するためのツールです。CLI パイプラインと Web コントロールパネルを備えており、メイン動画の解析、参照音声の切り出し、タイムライン生成、音声ミックス付き動画の書き出しを行えます。
+
+公開版には個人用の動画、音声素材、出力済みファイル、一時解析ファイル、ローカル設定ファイルは含まれていません。利用する場合は、自分のメディアファイルを `input/` に配置し、`config.example.ini` をコピーして `config.ini` を作成してください。
+
+基本的な流れ：
+
+1. `pip install -r requirements.txt` で依存パッケージをインストールします。
+2. `copy config.example.ini config.ini` で設定ファイルを作成します。
+3. `input/` フォルダーに動画と音声素材を入れます。
+4. `python scripts/panel_app.py` を実行し、`http://127.0.0.1:5010` を開きます。
+5. バッチ処理を使う場合は、`auto_schedule.example.txt` を `auto_schedule.txt` にコピーし、出力サフィックスと動画ファイル名だけを編集します。
+
 ## Public Package Notice / 公開版說明
 
 公開版不包含任何個人素材、輸入影片、輸出影片、暫存分析檔、build 產物或本機 `config.ini`。
